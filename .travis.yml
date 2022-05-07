@@ -1,0 +1,49 @@
+dist: bionic
+language: php
+
+env:
+  global:
+    - SETUP=stable
+    - CC_TEST_REPORTER_ID=4c3edcc1d4f186c875a15af9919c10f74055f7525c08c12a6d5fc60dcb281beb
+    - GIT_COMMITTED_AT=$(if [ "$TRAVIS_PULL_REQUEST" == "false" ]; then git log -1 --pretty=format:%ct; else git log -1 --skip 1 --pretty=format:%ct; fi)
+
+matrix:
+  fast_finish: true
+  include:
+    - php: 7.3
+    - php: 7.4
+
+cache:
+  directories:
+    - $HOME/.composer/cache
+
+services:
+  - memcached
+  - redis-server
+  - mysql
+
+before_install:
+  - cp .env.travis .env
+  - php -m | grep xdebug
+  - printf "\n" | pecl install -f redis
+  - travis_retry composer self-update
+  - composer self-update
+  - mysql -e 'CREATE DATABASE test;'
+  - composer install --no-interaction
+  - php artisan key:generate
+  - php artisan migrate --seed
+
+before_script:
+  - curl -L https://codeclimate.com/downloads/test-reporter/test-reporter-latest-linux-amd64 > ./cc-test-reporter
+  - chmod +x ./cc-test-reporter
+  - ./cc-test-reporter before-build
+
+install:
+  - if [[ $SETUP = 'stable' ]]; then travis_retry composer update --prefer-dist --no-interaction --prefer-stable --no-suggest; fi
+  - if [[ $SETUP = 'lowest' ]]; then travis_retry composer update --prefer-dist --no-interaction --prefer-lowest --prefer-stable --no-suggest; fi
+
+script:
+  - vendor/bin/phpunit --coverage-clover build/logs/clover.xml
+
+after_script:
+  - if [ "$TRAVIS_PULL_REQUEST" == "false" ]; then ./cc-test-reporter after-build build/logs/clover.xml -t clover --exit-code $TRAVIS_TEST_RESULT; fi
